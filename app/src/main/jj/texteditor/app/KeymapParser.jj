@@ -1,0 +1,118 @@
+PARSER_BEGIN(KeymapParser)
+package texteditor.app;
+
+import java.io.*;
+import java.util.LinkedList;
+import java.util.List;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination.ModifierValue;
+
+import texteditor.app.model.KeyMapping;
+import texteditor.app.model.KeyMapping.KeymapAction;
+import texteditor.app.model.KeyMapping.KeymapPosition;
+
+/**
+ * JavaCC grammar file used to create a parser for the keymap file domain specific language.
+ * 
+ * @author Rohan Khayech
+ */
+public class KeymapParser {
+    public static List<KeyMapping> parse(String filename) throws IOException, ParseException
+    {
+        KeymapParser p = new KeymapParser(new FileInputStream(filename));
+        return p.dsl();
+    }
+}
+PARSER_END(KeymapParser)
+
+SKIP : { " " | "\t" | "\r" }
+
+TOKEN : {
+    < CTRL: "ctrl" > |
+    < SHIFT: "shift" > |
+    < ALT: "alt" > |
+    < INSERT: "insert" > |
+    < DELETE: "delete" > |
+    < AT: "at" > |
+    < SOL: "start of line" > |
+    < CARET: "caret" > |
+    < STRING: "\"" (~["\n", "\""])* "\"" > |
+    < LETTER: ["a"-"z"] >
+}
+
+List<KeyMapping> dsl() : 
+{
+    List<KeyMapping> keyMappings = new LinkedList<KeyMapping>();
+    KeyMapping keyMapping;
+}
+{
+    (
+        keyMapping = keyMapping() {
+            keyMappings.add(keyMapping);
+        }
+    )
+    (
+        "\n"
+        keyMapping = keyMapping() {
+            keyMappings.add(keyMapping);
+        }
+    )*
+    ("\n")*
+    <EOF> {
+        return keyMappings;
+    }
+    
+}
+
+KeyMapping keyMapping() : 
+{
+    Token letterToken, stringToken;
+    boolean alt = false, ctrl = false, shift = false;
+    KeymapAction action; 
+    KeymapPosition pos;
+    String letter, string;
+    KeyMapping keyMapping;
+}
+{
+    (
+        (
+            <CTRL> { ctrl = true; } |
+            <SHIFT> { shift = true; } |
+            <ALT> { alt = true; }
+        ) "+"
+    )*
+    letterToken = <LETTER> {
+        letter = letterToken.image;
+    } "="
+    (
+        <INSERT> { action = KeymapAction.INSERT; } |
+        <DELETE> { action = KeymapAction.DELETE; } 
+    )
+    stringToken = <STRING> {
+        string = stringToken.image;
+    } <AT>
+    (
+        <CARET> { pos = KeymapPosition.CARET; } |
+        <SOL> { pos = KeymapPosition.SOL; }
+    )
+    {   
+        ModifierValue altMod, shiftMod, ctrlMod;
+        if (alt) { altMod = ModifierValue.DOWN; } 
+        else { altMod = ModifierValue.UP; }
+
+        if (ctrl) { ctrlMod = ModifierValue.DOWN; } 
+        else { ctrlMod = ModifierValue.UP; }
+
+        if (shift) { shiftMod = ModifierValue.DOWN; } 
+        else { shiftMod = ModifierValue.UP; }
+
+        KeyCode code = KeyCode.getKeyCode(letter.toUpperCase());
+
+        KeyCodeCombination keyCombo = new KeyCodeCombination(code, shiftMod, ctrlMod, altMod, ModifierValue.ANY, ModifierValue.ANY);
+    
+        keyMapping = new KeyMapping(keyCombo, action, string.substring(1,string.length()-1), pos);
+
+        return keyMapping;
+    }
+}
